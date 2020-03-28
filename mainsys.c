@@ -5,9 +5,10 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <python3.5/Python.h>
+#include "mpu9250.h"
 
-int pipein=0;
 int sensorData=0;
+int fd[2];
 
 //Using Python function
 int controlLawDesign(int x,int a, int b){
@@ -39,13 +40,12 @@ int controlLawDesign(int x,int a, int b){
     return res;
 }
 
-void gettedSensorDataSig(int a){
+void gotSensorDataSig(int a){
     printf("get signal\n\r");
-    pipein=1;
+    read(fd[0],&sensorData,sizeof(sensorData));
 }
 
 int main(void){
-    int fd[2];
     pipe(fd);
     const pid_t parrent_ID=getpid();
     pid_t child_ID=fork();
@@ -61,16 +61,16 @@ int main(void){
         //sensoring process
         case 0:
             close(fd[0]);
+            initMPU9250();
+            sleep(1);
             while(1){
                 //virtual sensor
-                scanf("%d",&sensorData);
-                printf("[child process]:getted sensor signal\n\r");
+                sensorData=getData(ACCEL_XOUT_H);
                 //send signal to parrent process
                 kill(parrent_ID,SIGUSR1);
-                printf("[child process]:sended signal\n\r");
                 //input sensor data into pipe.
                 write(fd[1],&sensorData,sizeof(sensorData));
-                printf("[child process]:inputted pipe\n\r");
+                sleep(1);
             };
             close(fd[1]);
             break;
@@ -79,15 +79,10 @@ int main(void){
             Py_Initialize();
             PySys_SetPath(Py_DecodeLocale(".",NULL));
             close(fd[1]);
-            signal(SIGUSR1,gettedSensorDataSig);
+            signal(SIGUSR1,gotSensorDataSig);
             while(1){
-                if(pipein==1){
-                    read(fd[0],&sensorData,sizeof(sensorData));
-                    pipein=0;
-                }
-                //printf("[parrent process]:%d\n\r",sensorData);
-                printf("[parrent process]%d\n\r",controlLawDesign(sensorData,1,0));
-                sleep(1);
+                printf("[parrent process]:sensorData=%d\n\r",controlLawDesign(sensorData,1,0));
+                sleep(2);
             }
             close(fd[0]);
             Py_Finalize();
